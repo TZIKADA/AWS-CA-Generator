@@ -578,7 +578,11 @@ export class IamBaselineStack extends cdk.Stack {
                         arn("dynamodb", `table/${p}-*`, cfg.region),
                         `arn:${this.partition}:s3:::${p}-*/*`,
                         arn("events", "event-bus/*", cfg.region),
-                        arn("verifiedpermissions", "policy-store/*"),
+                        arn(
+                            "verifiedpermissions",
+                            "policy-store/*",
+                            cfg.region,
+                        ),
                         arn("cognito-idp", "userpool/*", cfg.region),
                     ],
                 }),
