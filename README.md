@@ -6,7 +6,7 @@ An AWS platform for companies and businesses willing to manage their own securit
 
 ## References:
 
-- [Data Escrow Environment](https://docs.aws.amazon.com/reference-architecture-diagrams/latest/data-escrow-environment/data-escrow-environment.html)  
+- [Data Escrow Environment](https://docs.aws.amazon.com/reference-architecture-diagrams/latest/data-escrow-environment/data-escrow-environment.html)
 - [Content Moderation and Compliance](https://docs.aws.amazon.com/reference-architecture-diagrams/latest/content-moderation-compliance/content-moderation-compliance.html)
 
 &nbsp;

@@ -1,17 +1,17 @@
 {
-  "prefix": "certpoc",
-  "sandboxAccountId": "000000000000",
-  "region": "us-east-1",
-  "alertEmail": "team@example.com",
-  "monthlyBudgetUsd": 25,
-  "requireMfa": true,
-  "enableAwsConfig": true,
-  "appBootstrapQualifier": "certapp",
-  "logRetentionDays": 90,
-  "vpc": {
-    "cidr": "10.40.0.0/16",
-    "maxAzs": 2,
-    "interfaceEndpoints": []
-  },
-  "forbiddenAccountIds": []
+    "prefix": "certpoc",
+    "sandboxAccountId": "000000000000",
+    "region": "us-east-1",
+    "alertEmail": "team@example.com",
+    "monthlyBudgetUsd": 25,
+    "requireMfa": true,
+    "enableAwsConfig": true,
+    "appBootstrapQualifier": "certapp",
+    "logRetentionDays": 90,
+    "vpc": {
+        "cidr": "10.40.0.0/16",
+        "maxAzs": 2,
+        "interfaceEndpoints": []
+    },
+    "forbiddenAccountIds": []
 }
