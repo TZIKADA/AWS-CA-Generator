@@ -160,6 +160,11 @@ export class SecurityStack extends cdk.Stack {
         this.alertTopic.addSubscription(
             new subs.EmailSubscription(cfg.alertEmail),
         );
+        // CloudWatch alarms below publish to this topic; grant the service principal sns:Publish.
+        // (The KMS key policy already allows cloudwatch.amazonaws.com to use the encryption key.)
+        this.alertTopic.grantPublish(
+            new iam.ServicePrincipal("cloudwatch.amazonaws.com"),
+        );
 
         // ---------------------------------------------------------------- audit log storage
         const accessLogsBucket = new s3.Bucket(this, "AccessLogsBucket", {
