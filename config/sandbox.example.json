@@ -3,7 +3,7 @@
     "sandboxAccountId": "000000000000",
     "region": "us-east-1",
     "alertEmail": "team@example.com",
-    "monthlyBudgetUsd": 25,
+    "monthlyBudgetUsd": 0,
     "requireMfa": true,
     "enableAwsConfig": true,
     "appBootstrapQualifier": "certapp",
