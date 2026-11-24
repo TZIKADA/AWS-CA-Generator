@@ -158,3 +158,4 @@ vite.config.ts.timestamp-*
 
 # AWS login credentials
 config/sandbox.json
+repomix-output.txt
