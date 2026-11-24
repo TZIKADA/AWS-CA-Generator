@@ -1,0 +1,16 @@
+output "app_url" { value = module.frontend.url }
+output "ecr_repository_url" { value = module.compute.ecr_repository_url }
+output "ecs_cluster" { value = module.compute.cluster_name }
+output "ecs_service" { value = module.compute.service_name }
+output "site_bucket" { value = module.frontend.site_bucket_name }
+output "cloudfront_distribution_id" { value = module.frontend.distribution_id }
+output "cognito_user_pool_id" { value = module.auth.user_pool_id }
+output "cognito_client_id" { value = module.auth.client_id }
+output "cognito_hosted_ui_domain" { value = module.auth.hosted_ui_domain }
+output "documents_bucket" { value = module.storage.documents_bucket_name }
+output "github_deploy_role_arn" { value = module.cicd.deploy_role_arn }
+output "worker_service" { value = module.worker.service_name }
+output "api_task_family" { value = module.compute.task_family }
+output "worker_task_family" { value = module.worker.task_family }
+output "jobs_queue_url" { value = module.queue.url }
+output "alerts_topic_arn" { value = module.observability.alerts_topic_arn }
