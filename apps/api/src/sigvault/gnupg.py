@@ -1,3 +1,4 @@
+import os
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from .config import settings
 
 @contextmanager
 def _homedir():
+    os.makedirs(settings.gnupghome, exist_ok=True)
     d = tempfile.mkdtemp(dir=settings.gnupghome)
     try:
         yield gnupg.GPG(gnupghome=d)

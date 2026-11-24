@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI
 
 from .routers import documents, health, keys, orgs
