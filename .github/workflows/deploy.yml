@@ -23,7 +23,7 @@ jobs:
               id: ecr
             - name: Build & push (arm64, immutable sha tag)
               run: |
-                  IMAGE="${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${GITHUB_SHA}"
+                  IMAGE="${{ vars.ECR_REPOSITORY_URL }}:${GITHUB_SHA}"
                   docker buildx build --platform linux/arm64 -t "$IMAGE" --push apps/api
                   echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
@@ -42,18 +42,23 @@ jobs:
 
             - name: Roll API + worker to the new image
               run: |
-                  for FAMILY in "${{ vars.API_TASK_FAMILY }}" "${{ vars.WORKER_TASK_FAMILY }}"; do
+                  for FAMILY_SERVICE in "${{ vars.API_TASK_FAMILY }}:api" "${{ vars.WORKER_TASK_FAMILY }}:worker"; do
+                    FAMILY="${FAMILY_SERVICE%:*}"
+                    SERVICE="${FAMILY_SERVICE##*:}"
                     CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition)
                     NEW=$(echo "$CURRENT" | jq --arg img "$IMAGE" '.containerDefinitions[0].image = $img
                       | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
                     REV=$(echo "$NEW" | aws ecs register-task-definition --cli-input-json file:///dev/stdin --query 'taskDefinition.revision' --output text)
-                    aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" --service "$(basename $FAMILY)" --task-definition "$FAMILY:$REV"
+                    aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" --service "$SERVICE" --task-definition "$FAMILY:$REV"
                   done
                   aws ecs wait services-stable --cluster "${{ vars.ECS_CLUSTER }}" --services api worker
 
             - name: Publish SPA
               run: |
-                  (cd apps/web && npm ci && npm run build)
+                  (cd apps/web &&
+                    VITE_COGNITO_DOMAIN="${{ vars.COGNITO_HOSTED_UI_DOMAIN }}" \
+                    VITE_COGNITO_CLIENT_ID="${{ vars.COGNITO_CLIENT_ID }}" \
+                    npm install && npm run build)
                   aws s3 sync apps/web/dist "s3://${{ vars.SITE_BUCKET }}" --delete \
                     --cache-control "public,max-age=31536000,immutable" --exclude index.html --exclude "*.html"
                   aws s3 cp apps/web/dist/index.html "s3://${{ vars.SITE_BUCKET }}/index.html" \

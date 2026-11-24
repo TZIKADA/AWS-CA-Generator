@@ -309,6 +309,46 @@ resource "aws_ecs_task_definition" "api" {
   }])
 }
 
+resource "aws_ecs_task_definition" "migrations" {
+  family                   = "${var.name}-migrations"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = var.cpu_architecture
+  }
+
+  container_definitions = jsonencode([{
+    name                   = "migrations"
+    image                  = "${aws_ecr_repository.api.repository_url}:${var.image_tag}"
+    essential              = true
+    readonlyRootFilesystem = true
+    command                = ["alembic", "upgrade", "head"]
+    mountPoints            = [{ sourceVolume = "scratch", containerPath = "/tmp", readOnly = false }]
+    linuxParameters = {
+      initProcessEnabled = true
+      capabilities       = { drop = ["ALL"] }
+    }
+    environment = [for k, v in local.container_environment : { name = k, value = v }]
+    secrets     = local.container_secrets
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.api.name
+        awslogs-region        = var.region
+        awslogs-stream-prefix = "migrations"
+      }
+    }
+  }])
+
+  volume { name = "scratch" }
+}
+
 resource "aws_ecs_service" "api" {
   name                               = "api"
   cluster                            = aws_ecs_cluster.this.id

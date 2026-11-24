@@ -5,6 +5,7 @@ output "cluster_arn" { value = aws_ecs_cluster.this.arn }
 output "service_name" { value = aws_ecs_service.api.name }
 output "service_arn" { value = aws_ecs_service.api.id }
 output "task_family" { value = aws_ecs_task_definition.api.family }
+output "migrations_task_family" { value = aws_ecs_task_definition.migrations.family }
 output "execution_role_arn" { value = aws_iam_role.execution.arn }
 output "task_role_arn" { value = aws_iam_role.task.arn }
 output "ecs_security_group_id" { value = aws_security_group.ecs.id }

@@ -51,6 +51,17 @@ Put required reviewers on `prod` and `prod-infra`.
 | repo variables                 | `DEV_TF_PLAN_ROLE_ARN`, `PROD_TF_PLAN_ROLE_ARN`                                                                   | bootstrap output `terraform_plan_role_arn`                  |
 | env `dev` / `prod`             | `AWS_REGION`, `DEPLOY_ROLE_ARN`                                                                                   | `github_deploy_role_arn`                                    |
 | env `dev` / `prod`             | `ECR_REPOSITORY_URL`, `ECS_CLUSTER`, `SITE_BUCKET`, `CF_DISTRIBUTION_ID`, `API_TASK_FAMILY`, `WORKER_TASK_FAMILY` | matching `terraform output` values                          |
+| env `dev` / `prod` | `MIGRATIONS_TASK_FAMILY`, `PRIVATE_SUBNET_IDS`, `ECS_SECURITY_GROUP_ID`                                           | matching `terraform output` values                          |
+| env `dev` / `prod` | `COGNITO_HOSTED_UI_DOMAIN`, `COGNITO_CLIENT_ID`                                                                    | matching `terraform output` values                          |
+
+## Fields that require credentials or deployment-specific values
+
+- `infra/terraform/app/envs/*.tfvars`: set `app_domain`, `route53_zone_id`, `github_repo`, `github_oidc_provider_arn`, and account-specific alert/SES values. These are not AWS credentials and must not contain secrets.
+- AWS credentials: provide them to Terraform and GitHub OIDC by configuring `aws configure`, an IAM role/profile, or `aws-actions/configure-aws-credentials`. Never add access keys to `.tfvars` or GitHub repository variables.
+- Aurora database username/password: generated and stored in AWS Secrets Manager by Terraform; no source field should contain a database password.
+- GitHub environment secret: `DEPLOY_ROLE_ARN`; GitHub environment variables: `AWS_REGION`, `ECR_REPOSITORY_URL`, `ECS_CLUSTER`, `SITE_BUCKET`, `CF_DISTRIBUTION_ID`, `API_TASK_FAMILY`, `WORKER_TASK_FAMILY`, `MIGRATIONS_TASK_FAMILY`, `PRIVATE_SUBNET_IDS`, `ECS_SECURITY_GROUP_ID`.
+- Terraform plan/apply roles: set `DEV_TF_PLAN_ROLE_ARN`, `PROD_TF_PLAN_ROLE_ARN`, and `TF_APPLY_ROLE_ARN` from bootstrap outputs.
+- Cognito web values: build the SPA with `VITE_COGNITO_DOMAIN` and `VITE_COGNITO_CLIENT_ID`; they are public configuration, not secrets.
 
 Run `terraform fmt -recursive infra/terraform` once before opening the first PR (the plan job enforces `fmt -check`).
 

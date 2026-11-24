@@ -1,7 +1,7 @@
 import shutil
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import gnupg
 from fastapi import APIRouter, Depends, HTTPException
@@ -110,5 +110,5 @@ async def revoke_key(
     ).scalar_one_or_none()
     if key is None:
         raise HTTPException(404, "key not found")
-    key.revoked_at = datetime.now(timezone.utc)
+    key.revoked_at = datetime.now(UTC)
     await db.commit()
