@@ -1,9 +1,16 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/typescript-node
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
-	"name": "AWS-CS-Generator",
+	"features": {
+  "ghcr.io/devcontainers/features/terraform:1": {},
+  "ghcr.io/devcontainers/features/github-cli:1": {},
+  "ghcr.io/devcontainers/features/python:1": {},
+  "ghcr.io/devcontainers/features/aws-cli:1": {},
+  "ghcr.io/devcontainers/features/docker-in-docker:4": {}
+ },
+ "name": "Ubuntu",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/typescript-node:5-26-trixie"
+	"image": "mcr.microsoft.com/devcontainers/base:resolute"
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
@@ -12,7 +19,7 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "yarn install",
+	// "postCreateCommand": "uname -a",
 
 	// Configure tool-specific properties.
 	// "customizations": {},
