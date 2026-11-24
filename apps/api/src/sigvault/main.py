@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import UTC, datetime
@@ -5,6 +6,7 @@ from typing import Annotated
 
 import boto3
 import jwt
+from botocore.exceptions import ClientError
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
@@ -87,14 +89,14 @@ def _org_for_user(user_sub: str, org_id: str, roles=("admin", "member")):
 
 def _ensure_user(claims: dict) -> str:
     sub = claims["sub"]
-    table = _table_required()
-    table.put_item(
-        Item={
-            "PK": f"USER#{sub}",
-            "SK": "PROFILE",
-            "email": claims.get("email", f"{sub}@unknown"),
-            "created_at": _now(),
-        }
+    _table_required().update_item(
+        Key={"PK": f"USER#{sub}", "SK": "PROFILE"},
+        UpdateExpression="SET email = if_not_exists(email, :email), "
+        "created_at = if_not_exists(created_at, :created_at)",
+        ExpressionAttributeValues={
+            ":email": claims.get("email", f"{sub}@unknown"),
+            ":created_at": _now(),
+        },
     )
     return sub
 
@@ -182,6 +184,11 @@ async def create_key(org_id: str, body: KeyCreate, claims: dict = Depends(_claim
     key_obj, _ = pgpy.PGPKey.from_blob(body.private_key_armored)
     if key_obj.is_public:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "a private signing key is required")
+    if key_obj.is_protected:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "encrypted signing keys are not supported; provide an unprotected key",
+        )
     fingerprint = str(key_obj.fingerprint)
     bucket = os.environ["DOCUMENTS_BUCKET"]
     _s3.put_object(
@@ -210,6 +217,27 @@ async def create_key(org_id: str, body: KeyCreate, claims: dict = Depends(_claim
         },
         "revoked_at": None,
     }
+
+
+@app.delete("/api/orgs/{org_id}/keys/{key_id}", status_code=204)
+async def revoke_key(org_id: str, key_id: str, claims: dict = Depends(_claims)):
+    sub = _ensure_user(claims)
+    _org_for_user(sub, org_id, ("admin",))
+    try:
+        _table_required().update_item(
+            Key={"PK": f"ORG#{org_id}", "SK": f"KEY#{key_id}"},
+            UpdateExpression="SET revoked_at = :revoked_at",
+            ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":revoked_at": _now()},
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "signing key not found") from exc
+        raise
+    _s3.delete_object(
+        Bucket=os.environ["DOCUMENTS_BUCKET"],
+        Key=f"keys/{org_id}/{key_id}",
+    )
 
 
 @app.get("/api/orgs/{org_id}/documents")
@@ -277,6 +305,28 @@ async def sign_document(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "signing key not found")
+    if key.get("revoked_at"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "signing key is revoked")
+    if doc["status"] != "uploaded":
+        raise HTTPException(status.HTTP_409_CONFLICT, f"document is already {doc['status']}")
+    bucket = os.environ["DOCUMENTS_BUCKET"]
+    upload_key = f"uploads/{org_id}/{doc_id}"
+    try:
+        uploaded = _s3.head_object(Bucket=bucket, Key=upload_key)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "document upload has not completed",
+            ) from exc
+        raise
+    max_bytes = int(os.environ.get("MAX_DOCUMENT_BYTES", 5 * 1024 * 1024))
+    if uploaded["ContentLength"] > max_bytes:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"document exceeds the {max_bytes} byte signing limit",
+        )
+
     job_id = str(uuid.uuid4())
     table.put_item(
         Item={
@@ -289,10 +339,46 @@ async def sign_document(
             "created_at": _now(),
         }
     )
-    doc["status"] = "queued"
-    table.put_item(Item=doc)
-    _sqs.send_message(
-        QueueUrl=os.environ["JOBS_QUEUE_URL"],
-        MessageBody=f'{{"job_id":"{job_id}","org_id":"{org_id}"}}',
-    )
+    try:
+        table.update_item(
+            Key={"PK": f"ORG#{org_id}", "SK": f"DOC#{doc_id}"},
+            UpdateExpression="SET #status = :queued",
+            ConditionExpression="#status = :uploaded",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":queued": "queued", ":uploaded": "uploaded"},
+        )
+        _sqs.send_message(
+            QueueUrl=os.environ["JOBS_QUEUE_URL"],
+            MessageBody=json.dumps({"job_id": job_id, "org_id": org_id}),
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "document was already queued or signed",
+            ) from exc
+        raise
     return {"job_id": job_id}
+
+
+@app.get("/api/orgs/{org_id}/documents/{doc_id}/download")
+async def download_document(org_id: str, doc_id: str, claims: dict = Depends(_claims)):
+    sub = _ensure_user(claims)
+    _org_for_user(sub, org_id, ("admin", "member", "auditor"))
+    doc = _table_required().get_item(
+        Key={"PK": f"ORG#{org_id}", "SK": f"DOC#{doc_id}"}
+    ).get("Item")
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document not found")
+    if doc.get("status") != "signed" or not doc.get("s3_signed_key"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "document is not signed yet")
+    return {
+        "download_url": _s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": os.environ["DOCUMENTS_BUCKET"],
+                "Key": doc["s3_signed_key"],
+            },
+            ExpiresIn=900,
+        )
+    }

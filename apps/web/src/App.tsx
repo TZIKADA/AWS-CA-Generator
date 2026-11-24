@@ -128,6 +128,13 @@ export default function App() {
         localStorage.removeItem(TOKEN_KEY);
         setToken(null);
         setError(null);
+        if (AUTH_DOMAIN && CLIENT_ID) {
+            const params = new URLSearchParams({
+                client_id: CLIENT_ID,
+                logout_uri: `${window.location.origin}/`,
+            });
+            window.location.assign(`https://${AUTH_DOMAIN}/logout?${params}`);
+        }
     }
 
     return (

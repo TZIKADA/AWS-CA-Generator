@@ -8,7 +8,7 @@ permissions: { id-token: write, contents: read, pull-requests: write }
 jobs:
     plan:
         strategy:
-            matrix: { env: [dev, prod] }
+            matrix: { env: [dev] }
         runs-on: ubuntu-latest
         environment: ${{ matrix.env }}-infra
         steps:
@@ -17,7 +17,7 @@ jobs:
               with: { terraform_version: "1.10.0" }
             - uses: aws-actions/configure-aws-credentials@v4
               with:
-                  role-to-assume: ${{ matrix.env == 'prod' && vars.PROD_TF_PLAN_ROLE_ARN || vars.DEV_TF_PLAN_ROLE_ARN }}
+                  role-to-assume: ${{ vars.DEV_TF_PLAN_ROLE_ARN }}
                   aws-region: eu-west-1
             - run: terraform fmt -check -recursive
               working-directory: infra/terraform
@@ -33,7 +33,7 @@ jobs:
         needs: plan
         strategy:
             max-parallel: 1
-            matrix: { env: [dev, prod] }
+            matrix: { env: [dev] }
         runs-on: ubuntu-latest
         environment: ${{ matrix.env }}-infra # prod-infra requires reviewers
         steps:

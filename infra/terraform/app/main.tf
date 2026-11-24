@@ -9,25 +9,71 @@ module "auth" {
   name                    = local.name
   region                  = var.aws_region
   hosted_ui_domain_prefix = "${local.name}-${data.aws_caller_identity.current.account_id}"
-  callback_urls           = var.extra_callback_urls
-  logout_urls             = var.extra_logout_urls
-  deletion_protection     = var.deletion_protection
+  callback_urls = concat(
+    ["http://localhost:5173/auth/callback"],
+    var.extra_callback_urls,
+  )
+  logout_urls         = concat(["http://localhost:5173/"], var.extra_logout_urls)
+  deletion_protection = var.deletion_protection
 }
 
-module "serverless" {
-  source            = "../modules/free_serverless"
+module "backend" {
+  source            = "../modules/backend"
   name              = local.name
   region            = var.aws_region
   cognito_issuer    = module.auth.issuer
   cognito_client_id = module.auth.client_id
 }
 
+moved {
+  from = module.serverless
+  to   = module.backend
+}
+
+moved {
+  from = module.storage.aws_s3_bucket.documents
+  to   = module.backend.aws_s3_bucket.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_ownership_controls.documents
+  to   = module.backend.aws_s3_bucket_ownership_controls.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_public_access_block.documents
+  to   = module.backend.aws_s3_bucket_public_access_block.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_server_side_encryption_configuration.documents
+  to   = module.backend.aws_s3_bucket_server_side_encryption_configuration.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_versioning.documents
+  to   = module.backend.aws_s3_bucket_versioning.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_lifecycle_configuration.documents
+  to   = module.backend.aws_s3_bucket_lifecycle_configuration.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_cors_configuration.documents
+  to   = module.backend.aws_s3_bucket_cors_configuration.documents
+}
+
+moved {
+  from = module.storage.aws_s3_bucket_policy.documents
+  to   = module.backend.aws_s3_bucket_policy.documents
+}
+
 module "frontend" {
   source            = "../modules/frontend"
   name              = local.name
-  domain_name       = var.app_domain
-  route53_zone_id   = var.route53_zone_id
-  api_origin_domain = replace(module.serverless.api_endpoint, "https://", "")
+  api_origin_domain = replace(module.backend.api_endpoint, "https://", "")
 }
 
 module "cicd" {
@@ -36,13 +82,11 @@ module "cicd" {
   github_repo        = var.github_repo
   github_subject     = "repo:${var.github_repo}:environment:${var.environment}"
   oidc_provider_arn  = var.github_oidc_provider_arn
-  ecr_repository_arn = module.serverless.ecr_repository_arn
-  ecs_service_arns   = []
-  pass_role_arns     = []
+  ecr_repository_arn = module.backend.ecr_repository_arn
   site_bucket_arn    = module.frontend.site_bucket_arn
   distribution_arn   = module.frontend.distribution_arn
   lambda_function_names = [
-    module.serverless.api_function_name,
-    module.serverless.worker_function_name,
+    module.backend.api_function_name,
+    module.backend.worker_function_name,
   ]
 }

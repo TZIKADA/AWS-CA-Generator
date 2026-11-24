@@ -8,14 +8,6 @@ terraform {
 
 variable "name" { type = string }
 variable "api_origin_domain" { type = string }
-variable "domain_name" {
-  type    = string
-  default = ""
-}
-variable "route53_zone_id" {
-  type    = string
-  default = ""
-}
 variable "price_class" {
   type    = string
   default = "PriceClass_100"
@@ -43,6 +35,23 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "site" {
   bucket = aws_s3_bucket.site.id
   rule {
     apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "site" {
+  bucket = aws_s3_bucket.site.id
+  versioning_configuration { status = "Enabled" }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "site" {
+  bucket     = aws_s3_bucket.site.id
+  depends_on = [aws_s3_bucket_versioning.site]
+
+  rule {
+    id     = "expire-old-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration { noncurrent_days = 7 }
   }
 }
 

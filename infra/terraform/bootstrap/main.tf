@@ -78,8 +78,8 @@ output "state_bucket" { value = aws_s3_bucket.state.id }
 output "github_oidc_provider_arn" { value = aws_iam_openid_connect_provider.github.arn }
 
 # ---------------------------------------------------------------------------------------------
-# Roles used by the infra GitHub workflow (OIDC). The apply role is effectively admin because
-# Terraform creates IAM, KMS, VPC, etc. Protect it with a GitHub environment that requires reviewers.
+# Roles for the infrastructure workflow. The apply role is account-admin; protect it with GitHub
+# environment approvals and never store static AWS credentials in GitHub.
 # ---------------------------------------------------------------------------------------------
 variable "github_repo" {
   type        = string
@@ -135,7 +135,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:pull_request"]
+      values   = ["repo:${var.github_repo}:environment:${var.infra_environment}"]
     }
   }
 }

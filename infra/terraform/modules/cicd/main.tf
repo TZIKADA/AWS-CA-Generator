@@ -1,6 +1,4 @@
-# Role that GitHub Actions assumes (OIDC, no long-lived keys) to deploy the APPLICATION
-# (push image, roll ECS, sync SPA, invalidate CDN). Infra changes (terraform apply) use a separate,
-# more privileged role that you should create per account and protect with GitHub environment approvals.
+# Role assumed by GitHub Actions using OIDC to publish Lambda images and the SPA.
 variable "name" { type = string }
 variable "github_repo" {
   type        = string
@@ -12,8 +10,6 @@ variable "github_subject" {
 }
 variable "oidc_provider_arn" { type = string }
 variable "ecr_repository_arn" { type = string }
-variable "ecs_service_arns" { type = list(string) }
-variable "pass_role_arns" { type = list(string) }
 variable "lambda_function_names" {
   type    = list(string)
   default = []
@@ -22,6 +18,7 @@ variable "site_bucket_arn" { type = string }
 variable "distribution_arn" { type = string }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 data "aws_iam_policy_document" "trust" {
   statement {
@@ -63,8 +60,11 @@ data "aws_iam_policy_document" "deploy" {
   dynamic "statement" {
     for_each = length(var.lambda_function_names) > 0 ? [1] : []
     content {
-      actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
-      resources = [for name in var.lambda_function_names : "arn:aws:lambda:*:*:function:${name}"]
+      actions = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+      resources = [
+        for name in var.lambda_function_names :
+        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${name}"
+      ]
     }
   }
   statement {

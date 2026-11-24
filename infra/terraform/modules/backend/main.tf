@@ -43,12 +43,22 @@ resource "aws_s3_bucket" "documents" {
   force_destroy = true
 }
 
+resource "aws_s3_bucket_ownership_controls" "documents" {
+  bucket = aws_s3_bucket.documents.id
+  rule { object_ownership = "BucketOwnerEnforced" }
+}
+
 resource "aws_s3_bucket_public_access_block" "documents" {
   bucket                  = aws_s3_bucket.documents.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "documents" {
+  bucket = aws_s3_bucket.documents.id
+  versioning_configuration { status = "Enabled" }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "documents" {
@@ -63,22 +73,22 @@ resource "aws_s3_bucket_lifecycle_configuration" "documents" {
   rule {
     id     = "delete-old-files"
     status = "Enabled"
-    filter {
-      and {
-        prefix = "uploads/"
-      }
-    }
+    filter { prefix = "uploads/" }
     expiration { days = 30 }
+    noncurrent_version_expiration { noncurrent_days = 1 }
   }
   rule {
     id     = "delete-old-signatures"
     status = "Enabled"
-    filter {
-      and {
-        prefix = "signed/"
-      }
-    }
+    filter { prefix = "signed/" }
     expiration { days = 30 }
+    noncurrent_version_expiration { noncurrent_days = 7 }
+  }
+  rule {
+    id     = "delete-old-key-versions"
+    status = "Enabled"
+    filter { prefix = "keys/" }
+    noncurrent_version_expiration { noncurrent_days = 7 }
   }
 }
 
@@ -92,6 +102,29 @@ resource "aws_s3_bucket_cors_configuration" "documents" {
   }
 }
 
+data "aws_iam_policy_document" "documents" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.documents.arn, "${aws_s3_bucket.documents.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "documents" {
+  bucket = aws_s3_bucket.documents.id
+  policy = data.aws_iam_policy_document.documents.json
+}
+
 resource "aws_sqs_queue" "dlq" {
   name                      = "${var.name}-jobs-dlq"
   message_retention_seconds = 1209600
@@ -99,7 +132,8 @@ resource "aws_sqs_queue" "dlq" {
 
 resource "aws_sqs_queue" "jobs" {
   name                       = "${var.name}-jobs"
-  visibility_timeout_seconds = 300
+  visibility_timeout_seconds = 1800
+  sqs_managed_sse_enabled    = true
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
@@ -107,10 +141,26 @@ resource "aws_sqs_queue" "jobs" {
 }
 
 resource "aws_ecr_repository" "api" {
-  name                 = "${var.name}-api"
+  name                 = "${var.name}-lambda"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
   image_scanning_configuration { scan_on_push = true }
+}
+
+resource "aws_ecr_lifecycle_policy" "api" {
+  repository = aws_ecr_repository.api.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep the two most recent Lambda images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 2
+      }
+      action = { type = "expire" }
+    }]
+  })
 }
 
 resource "aws_iam_role" "lambda" {
@@ -162,13 +212,24 @@ resource "aws_iam_role_policy" "application" {
 
 locals {
   lambda_environment = {
-    AWS_REGION        = var.region
-    DYNAMODB_TABLE    = aws_dynamodb_table.this.name
-    DOCUMENTS_BUCKET  = aws_s3_bucket.documents.id
-    JOBS_QUEUE_URL    = aws_sqs_queue.jobs.id
-    COGNITO_ISSUER    = var.cognito_issuer
-    COGNITO_CLIENT_ID = var.cognito_client_id
+    AWS_REGION         = var.region
+    DYNAMODB_TABLE     = aws_dynamodb_table.this.name
+    DOCUMENTS_BUCKET   = aws_s3_bucket.documents.id
+    JOBS_QUEUE_URL     = aws_sqs_queue.jobs.id
+    COGNITO_ISSUER     = var.cognito_issuer
+    COGNITO_CLIENT_ID  = var.cognito_client_id
+    MAX_DOCUMENT_BYTES = "5242880"
   }
+}
+
+resource "aws_cloudwatch_log_group" "api" {
+  name              = "/aws/lambda/${var.name}-api"
+  retention_in_days = 7
+}
+
+resource "aws_cloudwatch_log_group" "worker" {
+  name              = "/aws/lambda/${var.name}-worker"
+  retention_in_days = 7
 }
 
 resource "aws_lambda_function" "api" {
@@ -180,6 +241,11 @@ resource "aws_lambda_function" "api" {
   memory_size   = 512
   architectures = ["arm64"]
   environment { variables = local.lambda_environment }
+  depends_on = [
+    aws_cloudwatch_log_group.api,
+    aws_iam_role_policy_attachment.basic,
+    aws_iam_role_policy.application,
+  ]
 }
 
 resource "aws_lambda_function" "worker" {
@@ -188,10 +254,15 @@ resource "aws_lambda_function" "worker" {
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api.repository_url}:bootstrap"
   timeout       = 300
-  memory_size   = 1024
+  memory_size   = 512
   architectures = ["arm64"]
   image_config { command = ["sigvault.lambda_handler.worker_handler"] }
   environment { variables = local.lambda_environment }
+  depends_on = [
+    aws_cloudwatch_log_group.worker,
+    aws_iam_role_policy_attachment.basic,
+    aws_iam_role_policy.application,
+  ]
 }
 
 resource "aws_lambda_event_source_mapping" "worker" {

@@ -1,24 +1,6 @@
-environment     = "prod"
-aws_region      = "eu-west-1"
-app_domain      = "app.example.com"      # REPLACE
-route53_zone_id = "Z0000000000000000000" # REPLACE
-
-github_repo              = "your-org/your-repo"                                                          # REPLACE
-github_oidc_provider_arn = "arn:aws:iam::222222222222:oidc-provider/token.actions.githubusercontent.com" # prod account
-
-vpc_cidr                   = "10.30.0.0/16"
-az_count                   = 3
-single_nat_gateway         = false
-enable_interface_endpoints = true
-
-db_min_acu               = 1
-db_max_acu               = 16
-db_instance_count        = 2
-db_backup_retention_days = 35
-
-api_desired_count = 2
-api_min_count     = 2
-api_max_count     = 10
-
-deletion_protection   = true
-force_destroy_buckets = false
+# Do not apply a second stack if your goal is to stay within free-tier usage.
+environment              = "prod"
+aws_region               = "eu-west-1"
+github_repo              = "your-org/your-repo" # REPLACE with GitHub owner/repository
+github_oidc_provider_arn = "REPLACE_WITH_BOOTSTRAP_GITHUB_OIDC_PROVIDER_ARN"
+deletion_protection      = false
