@@ -4,15 +4,16 @@ import os
 import boto3
 from mangum import Mangum
 
+from .config import settings
 from .main import app
 
 handler = Mangum(app)
 
-_dynamodb = boto3.resource("dynamodb")
-_s3 = boto3.client("s3")
+_dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+_s3 = boto3.client("s3", region_name=settings.aws_region)
 
 
-def worker_handler(event, context):
+def worker_handler(event, _context):
     import pgpy
 
     table = _dynamodb.Table(os.environ["DYNAMODB_TABLE"])

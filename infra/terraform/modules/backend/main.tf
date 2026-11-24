@@ -2,6 +2,10 @@ variable "name" { type = string }
 variable "region" { type = string }
 variable "cognito_issuer" { type = string }
 variable "cognito_client_id" { type = string }
+variable "bedrock_model_id" {
+  type    = string
+  default = "amazon.nova-micro-v1:0"
+}
 
 data "aws_caller_identity" "current" {}
 
@@ -203,6 +207,11 @@ resource "aws_iam_role_policy" "application" {
       },
       {
         Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = ["arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"]
+      },
+      {
+        Effect   = "Allow"
         Action   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
         Resource = [aws_sqs_queue.jobs.arn, aws_sqs_queue.dlq.arn]
       }
@@ -218,6 +227,7 @@ locals {
     JOBS_QUEUE_URL     = aws_sqs_queue.jobs.id
     COGNITO_ISSUER     = var.cognito_issuer
     COGNITO_CLIENT_ID  = var.cognito_client_id
+    BEDROCK_MODEL_ID   = var.bedrock_model_id
     MAX_DOCUMENT_BYTES = "5242880"
   }
 }

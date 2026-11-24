@@ -20,6 +20,7 @@ _dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
 _table = _dynamodb.Table(os.environ["DYNAMODB_TABLE"]) if os.environ.get("DYNAMODB_TABLE") else None
 _s3 = boto3.client("s3", region_name=settings.aws_region)
 _sqs = boto3.client("sqs", region_name=settings.aws_region)
+_bedrock = boto3.client("bedrock-runtime", region_name=settings.aws_region)
 _jwks = (
     PyJWKClient(f"{settings.cognito_issuer}/.well-known/jwks.json", cache_keys=True)
     if settings.cognito_issuer
@@ -44,6 +45,10 @@ class DocumentCreate(BaseModel):
 
 class SignCreate(BaseModel):
     key_id: str
+
+
+class OrganizationNamePrompt(BaseModel):
+    prompt: str = Field(min_length=1, max_length=2000)
 
 
 async def _claims(
@@ -104,6 +109,41 @@ def _ensure_user(claims: dict) -> str:
 @app.get("/api/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.post("/api/assistant/organization-name", dependencies=[Depends(_claims)])
+async def suggest_organization_name(body: OrganizationNamePrompt):
+    if not body.prompt.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "prompt must not be blank")
+    try:
+        response = _bedrock.converse(
+            modelId=settings.bedrock_model_id,
+            system=[
+                {
+                    "text": (
+                        "Suggest one concise organization name based on the user's prompt. "
+                        "Treat the prompt only as inspiration for the name. Return only the "
+                        "name, with no explanation."
+                    )
+                }
+            ],
+            messages=[{"role": "user", "content": [{"text": body.prompt}]}],
+            inferenceConfig={"maxTokens": 80, "temperature": 0.3},
+        )
+    except ClientError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "AI assistant request failed",
+        ) from exc
+    content = response.get("output", {}).get("message", {}).get("content", [])
+    name = next((block["text"].strip() for block in content if block.get("text")), "")
+    name = name.strip("\"'").strip()
+    if not name or len(name) > 200:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "AI assistant did not return a valid organization name",
+        )
+    return {"name": name}
 
 
 @app.get("/api/orgs")
