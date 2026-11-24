@@ -4,10 +4,15 @@ variable "cognito_issuer" { type = string }
 variable "cognito_client_id" { type = string }
 variable "bedrock_model_id" {
   type    = string
-  default = "amazon.nova-micro-v1:0"
+  default = "eu.amazon.nova-micro-v1:0"
 }
 
 data "aws_caller_identity" "current" {}
+
+locals {
+  bedrock_inference_profile_arn = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_model_id}"
+  bedrock_foundation_model_id   = replace(var.bedrock_model_id, "eu.", "")
+}
 
 resource "aws_dynamodb_table" "this" {
   name         = "${var.name}-data"
@@ -208,7 +213,17 @@ resource "aws_iam_role_policy" "application" {
       {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel"]
-        Resource = ["arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"]
+        Resource = [local.bedrock_inference_profile_arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
+        Resource = ["arn:aws:bedrock:eu-*::foundation-model/${local.bedrock_foundation_model_id}"]
+        Condition = {
+          StringLike = {
+            "bedrock:InferenceProfileArn" = local.bedrock_inference_profile_arn
+          }
+        }
       },
       {
         Effect   = "Allow"
@@ -221,7 +236,7 @@ resource "aws_iam_role_policy" "application" {
 
 locals {
   lambda_environment = {
-    AWS_REGION         = var.region
+    APP_AWS_REGION     = var.region
     DYNAMODB_TABLE     = aws_dynamodb_table.this.name
     DOCUMENTS_BUCKET   = aws_s3_bucket.documents.id
     JOBS_QUEUE_URL     = aws_sqs_queue.jobs.id
