@@ -83,7 +83,7 @@ output "github_oidc_provider_arn" { value = aws_iam_openid_connect_provider.gith
 # ---------------------------------------------------------------------------------------------
 variable "github_repo" {
   type        = string
-  description = "owner/repo"
+  description = "TZIKADA/AWS-CA-Generator"
 }
 variable "infra_environment" {
   type        = string
