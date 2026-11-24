@@ -14,6 +14,10 @@ variable "oidc_provider_arn" { type = string }
 variable "ecr_repository_arn" { type = string }
 variable "ecs_service_arns" { type = list(string) }
 variable "pass_role_arns" { type = list(string) }
+variable "lambda_function_names" {
+  type    = list(string)
+  default = []
+}
 variable "site_bucket_arn" { type = string }
 variable "distribution_arn" { type = string }
 
@@ -56,21 +60,11 @@ data "aws_iam_policy_document" "deploy" {
     ]
     resources = [var.ecr_repository_arn]
   }
-  statement {
-    actions   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition", "ecs:ListTaskDefinitions"]
-    resources = ["*"]
-  }
-  statement {
-    actions   = ["ecs:UpdateService", "ecs:DescribeServices"]
-    resources = var.ecs_service_arns
-  }
-  statement {
-    actions   = ["iam:PassRole"]
-    resources = var.pass_role_arns
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
+  dynamic "statement" {
+    for_each = length(var.lambda_function_names) > 0 ? [1] : []
+    content {
+      actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+      resources = [for name in var.lambda_function_names : "arn:aws:lambda:*:*:function:${name}"]
     }
   }
   statement {

@@ -22,11 +22,3 @@ extra_logout_urls   = ["http://localhost:5173/"]
 
 deletion_protection   = false
 force_destroy_buckets = true
-
-alert_emails            = [] # e.g. ["ops@example.com"]
-monthly_budget_usd      = 0
-email_domain            = null # e.g. "mail.example.com" once you are ready to send invitations
-worker_desired_count    = 1
-worker_min_count        = 1
-worker_max_count        = 2
-enable_account_security = false

@@ -22,11 +22,3 @@ api_max_count     = 10
 
 deletion_protection   = true
 force_destroy_buckets = false
-
-alert_emails            = ["ops@example.com"] # REPLACE
-monthly_budget_usd      = 1500
-email_domain            = "example.com" # REPLACE
-worker_desired_count    = 2
-worker_min_count        = 2
-worker_max_count        = 10
-enable_account_security = true # CloudTrail + GuardDuty for the whole prod account

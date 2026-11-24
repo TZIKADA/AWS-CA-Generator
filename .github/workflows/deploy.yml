@@ -1,66 +1,58 @@
 name: deploy
 on:
-    push:
-        { branches: [main], paths: ["apps/**", ".github/workflows/deploy.yml"] }
+  push:
+    branches: [main]
+    paths: ["apps/**", ".github/workflows/deploy.yml"]
 
-permissions: { id-token: write, contents: read }
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-    deploy:
-        strategy:
-            max-parallel: 1
-            matrix: { env: [dev, prod] }
-        runs-on: ubuntu-latest
-        environment: ${{ matrix.env }} # prod requires reviewers
-        steps:
-            - uses: actions/checkout@v4
-            - uses: aws-actions/configure-aws-credentials@v4
-              with:
-                  role-to-assume: ${{ secrets.DEPLOY_ROLE_ARN }}
-                  aws-region: ${{ vars.AWS_REGION }}
-            - uses: docker/setup-buildx-action@v3
-            - uses: aws-actions/amazon-ecr-login@v2
-              id: ecr
-            - name: Build & push (arm64, immutable sha tag)
-              run: |
-                  IMAGE="${{ vars.ECR_REPOSITORY_URL }}:${GITHUB_SHA}"
-                  docker buildx build --platform linux/arm64 -t "$IMAGE" --push apps/api
-                  echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+  deploy:
+    strategy:
+      max-parallel: 1
+      matrix:
+        env: [dev, prod]
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
 
-            - name: Run DB migrations (blocks the rollout on failure)
-              run: |
-                  TASK=$(aws ecs run-task \
-                    --cluster "${{ vars.ECS_CLUSTER }}" \
-                    --task-definition "${{ vars.MIGRATIONS_TASK_FAMILY }}" \
-                    --launch-type FARGATE \
-                    --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNET_IDS }}],securityGroups=[${{ vars.ECS_SECURITY_GROUP_ID }}],assignPublicIp=DISABLED}" \
-                    --query 'tasks[0].taskArn' --output text)
-                  aws ecs wait tasks-stopped --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK"
-                  CODE=$(aws ecs describe-tasks --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK" \
-                    --query 'tasks[0].containers[0].exitCode' --output text)
-                  [ "$CODE" = "0" ] || { echo "migrations failed (exit $CODE)"; exit 1; }
+      - name: Build and push Lambda image
+        run: |
+          IMAGE="${{ vars.ECR_REPOSITORY_URL }}:${GITHUB_SHA}"
+          docker buildx build \
+            --platform linux/arm64 \
+            -f apps/api/Dockerfile.lambda \
+            -t "$IMAGE" \
+            --push apps/api
+          aws lambda update-function-code \
+            --function-name "${{ vars.API_FUNCTION_NAME }}" \
+            --image-uri "$IMAGE"
+          aws lambda update-function-code \
+            --function-name "${{ vars.WORKER_FUNCTION_NAME }}" \
+            --image-uri "$IMAGE"
+          aws lambda wait function-updated --function-name "${{ vars.API_FUNCTION_NAME }}"
+          aws lambda wait function-updated --function-name "${{ vars.WORKER_FUNCTION_NAME }}"
 
-            - name: Roll API + worker to the new image
-              run: |
-                  for FAMILY_SERVICE in "${{ vars.API_TASK_FAMILY }}:api" "${{ vars.WORKER_TASK_FAMILY }}:worker"; do
-                    FAMILY="${FAMILY_SERVICE%:*}"
-                    SERVICE="${FAMILY_SERVICE##*:}"
-                    CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition)
-                    NEW=$(echo "$CURRENT" | jq --arg img "$IMAGE" '.containerDefinitions[0].image = $img
-                      | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-                    REV=$(echo "$NEW" | aws ecs register-task-definition --cli-input-json file:///dev/stdin --query 'taskDefinition.revision' --output text)
-                    aws ecs update-service --cluster "${{ vars.ECS_CLUSTER }}" --service "$SERVICE" --task-definition "$FAMILY:$REV"
-                  done
-                  aws ecs wait services-stable --cluster "${{ vars.ECS_CLUSTER }}" --services api worker
-
-            - name: Publish SPA
-              run: |
-                  (cd apps/web &&
-                    VITE_COGNITO_DOMAIN="${{ vars.COGNITO_HOSTED_UI_DOMAIN }}" \
-                    VITE_COGNITO_CLIENT_ID="${{ vars.COGNITO_CLIENT_ID }}" \
-                    npm install && npm run build)
-                  aws s3 sync apps/web/dist "s3://${{ vars.SITE_BUCKET }}" --delete \
-                    --cache-control "public,max-age=31536000,immutable" --exclude index.html --exclude "*.html"
-                  aws s3 cp apps/web/dist/index.html "s3://${{ vars.SITE_BUCKET }}/index.html" \
-                    --cache-control "no-cache,no-store,must-revalidate"
-                  aws cloudfront create-invalidation --distribution-id "${{ vars.CF_DISTRIBUTION_ID }}" --paths /index.html
+      - name: Publish SPA
+        run: |
+          (cd apps/web &&
+            VITE_COGNITO_DOMAIN="${{ vars.COGNITO_HOSTED_UI_DOMAIN }}" \
+            VITE_COGNITO_CLIENT_ID="${{ vars.COGNITO_CLIENT_ID }}" \
+            npm install && npm run build)
+          aws s3 sync apps/web/dist "s3://${{ vars.SITE_BUCKET }}" --delete \
+            --cache-control "public,max-age=31536000,immutable" --exclude index.html --exclude "*.html"
+          aws s3 cp apps/web/dist/index.html "s3://${{ vars.SITE_BUCKET }}/index.html" \
+            --cache-control "no-cache,no-store,must-revalidate"
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CF_DISTRIBUTION_ID }}" \
+            --paths /index.html
