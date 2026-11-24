@@ -8,6 +8,8 @@ _sqs = boto3.client("sqs", region_name=settings.aws_region)
 
 
 def enqueue(payload: dict) -> str:
+    if not settings.jobs_queue_url:
+        raise RuntimeError("JOBS_QUEUE_URL is not configured")
     r = _sqs.send_message(QueueUrl=settings.jobs_queue_url, MessageBody=json.dumps(payload))
     return r["MessageId"]
 

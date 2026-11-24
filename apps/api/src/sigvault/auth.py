@@ -21,5 +21,8 @@ async def current_claims(c: HTTPAuthorizationCredentials | None = Depends(_beare
             audience=settings.cognito_client_id,
             issuer=settings.cognito_issuer,
         )
-    except Exception as e:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"invalid token: {e}") from e
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "invalid or expired bearer token",
+        ) from exc

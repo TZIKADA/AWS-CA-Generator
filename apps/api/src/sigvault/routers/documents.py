@@ -120,6 +120,8 @@ async def sign_document(
         raise HTTPException(404, "signing key not found")
     if key.revoked_at is not None:
         raise HTTPException(400, "signing key is revoked")
+    if doc.status in ("queued", "signed"):
+        raise HTTPException(409, f"document is already {doc.status}")
 
     job = Job(id=uuid.uuid4(), org_id=org_id, document_id=doc.id, key_id=key.id, status="pending")
     db.add(job)

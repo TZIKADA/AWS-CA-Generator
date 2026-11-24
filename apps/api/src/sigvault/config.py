@@ -1,4 +1,5 @@
 from functools import cached_property
+from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,8 +26,10 @@ class Settings(BaseSettings):
 
     @cached_property
     def db_dsn(self) -> str:
+        username = quote_plus(self.db_username)
+        password = quote_plus(self.db_password)
         return (
-            f"postgresql+asyncpg://{self.db_username}:{self.db_password}"
+            f"postgresql+asyncpg://{username}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 

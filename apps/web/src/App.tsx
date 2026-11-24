@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 const AUTH_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN as string | undefined;
 const CLIENT_ID = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
+const TOKEN_KEY = "sigvault_id_token";
 
 function loginUrl(): string {
     if (!AUTH_DOMAIN || !CLIENT_ID) return "#";
