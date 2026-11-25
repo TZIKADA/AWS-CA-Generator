@@ -35,6 +35,8 @@ export default function App() {
     const [health, setHealth] = useState<string>("…");
     const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
     const [orgName, setOrgName] = useState("");
+    const [assistantPrompt, setAssistantPrompt] = useState("");
+    const [isAssisting, setIsAssisting] = useState(false);
     const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
     const [error, setError] = useState<string | null>(null);
 
@@ -120,6 +122,31 @@ export default function App() {
         setOrgs((current) => [...current, created]);
     }
 
+    async function suggestOrganizationName() {
+        if (!token) return;
+        setError(null);
+        setIsAssisting(true);
+        try {
+            const response = await fetch("/api/assistant/organization-name", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ prompt: assistantPrompt }),
+            });
+            const body = await response.json();
+            if (!response.ok) {
+                throw new Error(body.detail || `AI assistant failed (${response.status})`);
+            }
+            setOrgName(body.name);
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setIsAssisting(false);
+        }
+    }
+
     async function signIn() {
         window.location.assign(await loginUrl());
     }
@@ -152,11 +179,28 @@ export default function App() {
                 <>
                     <button type="button" onClick={signOut}>Sign out</button>
                     <h2>Organizations</h2>
+                    <label>
+                        Describe your organization
+                        <input
+                            aria-label="Describe your organization"
+                            value={assistantPrompt}
+                            onChange={(event) => setAssistantPrompt(event.target.value)}
+                            maxLength={2000}
+                        />
+                    </label>
+                    <button
+                        type="button"
+                        onClick={suggestOrganizationName}
+                        disabled={!assistantPrompt.trim() || isAssisting}
+                    >
+                        {isAssisting ? "Generating..." : "Suggest organization name"}
+                    </button>
                     <form onSubmit={createOrg}>
                         <input
                             aria-label="Organization name"
                             value={orgName}
                             onChange={(event) => setOrgName(event.target.value)}
+                            maxLength={200}
                             required
                         />
                         <button type="submit">Create</button>
