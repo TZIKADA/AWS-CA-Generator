@@ -36,6 +36,11 @@ Deploy **dev only**; deploying a second environment doubles resource usage.
 Database credentials are not used; the app stores records in DynamoDB. Cognito's
 hosted UI domain and client ID are public configuration, not credentials.
 
+The optional organization-name suggestion calls Amazon Bedrock using the
+`bedrock_model_id` configured by the backend module (default:
+`eu.amazon.nova-micro-v1:0`). It requires model access in the selected region and
+incurs Bedrock usage charges; document signing does not depend on Bedrock.
+
 ## First deployment
 
 Bootstrap creates the state bucket and GitHub OIDC roles. Run it once in the AWS
@@ -102,5 +107,7 @@ former ECS image repository.
   submit a key you cannot safely store there.
 - Signing currently accepts unprotected PGP private keys only. Keep document
   uploads at or below 5 MiB for the worker's memory/runtime limit.
+- The optional organization-name suggestion depends on Bedrock model availability
+  and permissions in the configured region.
 - This POC has no organization invitation workflow, audit trail, production WAF,
   multi-region recovery, or cost hard cap. Budgets alert; they do not stop usage.

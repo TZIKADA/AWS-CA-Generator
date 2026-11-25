@@ -197,8 +197,7 @@ resource "aws_iam_role_policy" "application" {
       {
         Effect = "Allow"
         Action = [
-          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:Scan"
+          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query"
         ]
         Resource = [
           aws_dynamodb_table.this.arn,
@@ -207,8 +206,8 @@ resource "aws_iam_role_policy" "application" {
       },
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-        Resource = [aws_s3_bucket.documents.arn, "${aws_s3_bucket.documents.arn}/*"]
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = ["${aws_s3_bucket.documents.arn}/*"]
       },
       {
         Effect   = "Allow"
@@ -228,7 +227,7 @@ resource "aws_iam_role_policy" "application" {
       {
         Effect   = "Allow"
         Action   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
-        Resource = [aws_sqs_queue.jobs.arn, aws_sqs_queue.dlq.arn]
+        Resource = [aws_sqs_queue.jobs.arn]
       }
     ]
   })

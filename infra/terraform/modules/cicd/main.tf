@@ -1,9 +1,5 @@
 # Role assumed by GitHub Actions using OIDC to publish Lambda images and the SPA.
 variable "name" { type = string }
-variable "github_repo" {
-  type        = string
-  description = "owner/repo"
-}
 variable "github_subject" {
   type        = string
   description = "OIDC sub claim allowed to assume the role, e.g. repo:owner/repo:environment:prod"
@@ -60,7 +56,7 @@ data "aws_iam_policy_document" "deploy" {
   dynamic "statement" {
     for_each = length(var.lambda_function_names) > 0 ? [1] : []
     content {
-      actions = ["lambda:UpdateFunctionCode", "lambda:GetFunction"]
+      actions = ["lambda:UpdateFunctionCode", "lambda:GetFunctionConfiguration"]
       resources = [
         for name in var.lambda_function_names :
         "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${name}"

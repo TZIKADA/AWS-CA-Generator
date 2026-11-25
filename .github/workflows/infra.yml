@@ -3,7 +3,7 @@ on:
     pull_request: { paths: ["infra/**"] }
     push: { branches: [main], paths: ["infra/**"] }
 
-permissions: { id-token: write, contents: read, pull-requests: write }
+permissions: { id-token: write, contents: read }
 
 jobs:
     plan:
@@ -21,11 +21,15 @@ jobs:
                   aws-region: eu-west-1
             - run: terraform fmt -check -recursive
               working-directory: infra/terraform
+            - run: terraform init -backend=false
+              working-directory: infra/terraform/bootstrap
+            - run: terraform validate
+              working-directory: infra/terraform/bootstrap
             - run: terraform init -backend-config=envs/${{ matrix.env }}.backend.hcl
               working-directory: infra/terraform/app
             - run: terraform validate
               working-directory: infra/terraform/app
-            - run: terraform plan -var-file=envs/${{ matrix.env }}.tfvars -no-color -out=tfplan
+            - run: terraform plan -var-file=envs/${{ matrix.env }}.tfvars -no-color
               working-directory: infra/terraform/app
 
     apply:

@@ -127,6 +127,8 @@ def test_create_key(monkeypatch):
         is_public = False
         is_protected = False
         fingerprint = "fingerprint"
+        key_algorithm = SimpleNamespace(name="RSAEncryptOrSign")
+        key_size = 2048
 
     fake_pgpy = SimpleNamespace(
         PGPKey=SimpleNamespace(from_blob=lambda value: (FakeKey(), None))
@@ -154,6 +156,100 @@ def test_create_key(monkeypatch):
     assert response.json()["fingerprint"] == "fingerprint"
     assert uploads[0]["Key"].startswith("keys/org-1/")
     assert table.writes[0]["label"] == "Signing"
+
+
+def test_create_key_rejects_mismatched_algorithm(monkeypatch):
+    class FakeKey:
+        is_public = False
+        is_protected = False
+        key_algorithm = SimpleNamespace(name="RSAEncryptOrSign")
+        key_size = 4096
+
+    fake_pgpy = SimpleNamespace(
+        PGPKey=SimpleNamespace(from_blob=lambda _value: (FakeKey(), None))
+    )
+    monkeypatch.setitem(sys.modules, "pgpy", fake_pgpy)
+    table = FakeTable({})
+    _authorize(monkeypatch, table)
+    uploads = []
+    monkeypatch.setattr(main._s3, "put_object", lambda **kwargs: uploads.append(kwargs))
+
+    try:
+        response = TestClient(main.app).post(
+            "/api/orgs/org-1/keys",
+            json={
+                "label": "Signing",
+                "algorithm": "RSA_2048",
+                "private_key_armored": "private-key",
+            },
+        )
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "selected algorithm does not match PGP key (RSA_4096)"
+    assert uploads == []
+    assert table.writes == []
+
+
+def test_create_key_accepts_matching_ecdsa_curve(monkeypatch):
+    class FakeKey:
+        is_public = False
+        is_protected = False
+        fingerprint = "fingerprint"
+        key_algorithm = SimpleNamespace(name="ECDSA")
+        key_size = SimpleNamespace(name="NIST_P256")
+
+    fake_pgpy = SimpleNamespace(
+        PGPKey=SimpleNamespace(from_blob=lambda _value: (FakeKey(), None))
+    )
+    monkeypatch.setitem(sys.modules, "pgpy", fake_pgpy)
+    table = FakeTable({})
+    _authorize(monkeypatch, table)
+    monkeypatch.setenv("DOCUMENTS_BUCKET", "documents")
+    monkeypatch.setattr(main._s3, "put_object", lambda **_kwargs: None)
+
+    try:
+        response = TestClient(main.app).post(
+            "/api/orgs/org-1/keys",
+            json={
+                "label": "Signing",
+                "algorithm": "ECDSA_P256",
+                "private_key_armored": "private-key",
+            },
+        )
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["algorithm"] == "ECDSA_P256"
+
+
+def test_create_key_returns_bad_request_for_invalid_pgp_data(monkeypatch):
+    def invalid_key(_value):
+        raise ValueError("not a PGP key")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pgpy",
+        SimpleNamespace(PGPKey=SimpleNamespace(from_blob=invalid_key)),
+    )
+    _authorize(monkeypatch, FakeTable({}))
+
+    try:
+        response = TestClient(main.app).post(
+            "/api/orgs/org-1/keys",
+            json={
+                "label": "Signing",
+                "algorithm": "RSA_2048",
+                "private_key_armored": "not a PGP key",
+            },
+        )
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid PGP private key"
 
 
 def test_revoke_key(monkeypatch):

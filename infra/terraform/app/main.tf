@@ -79,7 +79,6 @@ module "frontend" {
 module "cicd" {
   source             = "../modules/cicd"
   name               = local.name
-  github_repo        = var.github_repo
   github_subject     = "repo:${var.github_repo}:environment:${var.environment}"
   oidc_provider_arn  = var.github_oidc_provider_arn
   ecr_repository_arn = module.backend.ecr_repository_arn

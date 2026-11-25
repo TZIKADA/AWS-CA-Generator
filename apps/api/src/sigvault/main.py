@@ -221,13 +221,34 @@ async def create_key(org_id: str, body: KeyCreate, claims: dict = Depends(_claim
     sub = _ensure_user(claims)
     _org_for_user(sub, org_id, ("admin",))
     key_id = str(uuid.uuid4())
-    key_obj, _ = pgpy.PGPKey.from_blob(body.private_key_armored)
+    try:
+        key_obj, _ = pgpy.PGPKey.from_blob(body.private_key_armored)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid PGP private key") from exc
     if key_obj.is_public:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "a private signing key is required")
     if key_obj.is_protected:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "encrypted signing keys are not supported; provide an unprotected key",
+        )
+    actual_algorithm: str | None
+    if key_obj.key_algorithm.name in {"RSAEncryptOrSign", "RSASignOnly"}:
+        actual_algorithm = f"RSA_{key_obj.key_size}"
+    elif key_obj.key_algorithm.name == "ECDSA":
+        curve = key_obj.key_size.name
+        actual_algorithm = {
+            "NIST_P256": "ECDSA_P256",
+            "NIST_P384": "ECDSA_P384",
+        }.get(curve)
+    else:
+        actual_algorithm = None
+    if actual_algorithm is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported PGP signing key algorithm")
+    if body.algorithm != actual_algorithm:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"selected algorithm does not match PGP key ({actual_algorithm})",
         )
     fingerprint = str(key_obj.fingerprint)
     bucket = os.environ["DOCUMENTS_BUCKET"]

@@ -12,11 +12,6 @@ variable "price_class" {
   type    = string
   default = "PriceClass_100"
 }
-variable "waf_rate_limit" {
-  type    = number
-  default = 2000
-}
-
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "site" {
