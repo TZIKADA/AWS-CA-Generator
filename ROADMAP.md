@@ -64,7 +64,7 @@ pytest -q --cov=sigvault --cov-fail-under=70
 Web, from `apps/web`:
 
 ```bash
-npm install
+npm ci
 npm run build
 ```
 
@@ -74,24 +74,33 @@ plans the dev application stack on infrastructure changes.
 
 ### Manual acceptance flow
 
-Use the deployed dev app/API and a non-sensitive test document:
+Use the deployed dev app/API and prepare a non-sensitive document plus a disposable,
+unprotected PGP private signing key supported by the app (RSA 2048/3072/4096 or
+ECDSA P-256/P-384). Never use a production key or confidential document.
 
-1. Sign in through Cognito and create an organization in the web app.
-2. Optionally request a name suggestion; verify it only fills the organization
-   name field and does not create the organization.
-3. Register an unprotected PGP private key in the key vault.
-4. Upload a non-sensitive file (5 MiB or smaller), select an active key, and request
-   signing.
-5. Wait for the document status to become `signed`, then download the `.sig` file.
-6. Confirm a revoked key cannot sign and a user without organization membership is
-   denied access.
+1. Open the deployed dev app and sign in through Cognito.
+2. Create an organization. The optional AI suggestion should only fill the name
+   field; it should not create the organization.
+3. Register the disposable key, choosing its matching algorithm, and point out that
+   keys are sensitive even though this is a demo.
+4. Upload the test document (5 MiB or smaller), select the active key, and start
+   signing. Show the `uploaded` → `queued` → `signed` status progression.
+5. Download the detached `.sig` file. Verify it against the original local document
+   with `gpg --verify <document>.sig <document>`.
+6. If time permits, revoke the demo key and show that a new signing request using it
+   is rejected. Test cross-organization denial only with a separately authorized
+   test account.
+
+Explain that signing is asynchronous, signatures are detached, and the POC is not
+production-ready: signing keys use S3-managed encryption, files expire after 30
+days, and the demo has no audit trail, invitation workflow, WAF, or cost hard cap.
 
 ## Known gaps and POC risks
 
-- The API suite passes 20 tests at 83% coverage, but its S3, DynamoDB, SQS, Cognito,
+- The API suite passes 26 tests at 87% coverage, but its S3, DynamoDB, SQS, Cognito,
   and PGP worker tests use fakes. A live signing acceptance run is still needed.
-- Local Python checks pass; the web production build still needs to run in CI or an
-  environment with Node.js/npm.
+- Local Python checks and the web production build pass. CI and deploy use the
+  committed npm lockfile for reproducible web dependencies.
 - The serverless path stores armored private keys in S3 with S3-managed encryption,
   not customer-managed KMS envelope encryption. Treat test keys as disposable and
   document this limitation in the demo.
