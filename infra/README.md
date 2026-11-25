@@ -105,8 +105,16 @@ former ECS image repository.
 - Documents and signing keys use S3-managed encryption to avoid customer-managed
   KMS charges. Signing keys are sensitive; restrict AWS account access and never
   submit a key you cannot safely store there.
-- Signing currently accepts unprotected PGP private keys only. Keep document
-  uploads at or below 5 MiB for the worker's memory/runtime limit.
+- The API and signing worker use separate execution roles. The worker can access
+  only organization-partitioned DynamoDB records and the S3 prefixes needed to
+  sign documents; the API role has only the application actions it needs.
+- Browser access to the documents bucket is limited by CORS to the deployed
+  CloudFront origin and `http://localhost:5173`. CORS is not an authorization
+  boundary; presigned URLs remain short-lived bearer capabilities.
+- Cognito ID tokens are kept in browser session storage rather than persistent
+  local storage.
+- Signing currently accepts unprotected PGP private keys up to 64 KiB. Keep
+  document uploads at or below 5 MiB for the worker's memory/runtime limit.
 - The optional organization-name suggestion depends on Bedrock model availability
   and permissions in the configured region.
 - This POC has no organization invitation workflow, audit trail, production WAF,

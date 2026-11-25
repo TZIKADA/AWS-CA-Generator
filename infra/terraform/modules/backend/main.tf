@@ -101,16 +101,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "documents" {
   }
 }
 
-resource "aws_s3_bucket_cors_configuration" "documents" {
-  bucket = aws_s3_bucket.documents.id
-  cors_rule {
-    allowed_methods = ["PUT", "GET"]
-    allowed_origins = ["*"]
-    allowed_headers = ["*"]
-    max_age_seconds = 300
-  }
-}
-
 data "aws_iam_policy_document" "documents" {
   statement {
     sid       = "DenyInsecureTransport"
@@ -189,6 +179,23 @@ resource "aws_iam_role_policy_attachment" "basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role" "worker_lambda" {
+  name = "${var.name}-worker-lambda"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "worker_basic" {
+  role       = aws_iam_role.worker_lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
 resource "aws_iam_role_policy" "application" {
   role = aws_iam_role.lambda.id
   policy = jsonencode({
@@ -205,9 +212,26 @@ resource "aws_iam_role_policy" "application" {
         ]
       },
       {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "${aws_s3_bucket.documents.arn}/keys/*",
+          "${aws_s3_bucket.documents.arn}/uploads/*",
+          "${aws_s3_bucket.documents.arn}/signed/*",
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:PutObject"]
+        Resource = [
+          "${aws_s3_bucket.documents.arn}/keys/*",
+          "${aws_s3_bucket.documents.arn}/uploads/*",
+        ]
+      },
+      {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-        Resource = ["${aws_s3_bucket.documents.arn}/*"]
+        Action   = ["s3:DeleteObject"]
+        Resource = ["${aws_s3_bucket.documents.arn}/keys/*"]
       },
       {
         Effect   = "Allow"
@@ -226,9 +250,51 @@ resource "aws_iam_role_policy" "application" {
       },
       {
         Effect   = "Allow"
-        Action   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+        Action   = ["sqs:SendMessage"]
         Resource = [aws_sqs_queue.jobs.arn]
       }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_application" {
+  role = aws_iam_role.worker_lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem"]
+        Resource = [aws_dynamodb_table.this.arn]
+        Condition = {
+          "ForAllValues:StringLike" = {
+            "dynamodb:LeadingKeys" = ["ORG#*"]
+          }
+        }
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
+        Resource = [
+          "${aws_s3_bucket.documents.arn}/keys/*",
+          "${aws_s3_bucket.documents.arn}/uploads/*",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = ["${aws_s3_bucket.documents.arn}/signed/*"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:ChangeMessageVisibility",
+        ]
+        Resource = [aws_sqs_queue.jobs.arn]
+      },
     ]
   })
 }
@@ -274,7 +340,7 @@ resource "aws_lambda_function" "api" {
 
 resource "aws_lambda_function" "worker" {
   function_name = "${var.name}-worker"
-  role          = aws_iam_role.lambda.arn
+  role          = aws_iam_role.worker_lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api.repository_url}:bootstrap"
   timeout       = 300
@@ -284,8 +350,8 @@ resource "aws_lambda_function" "worker" {
   environment { variables = local.lambda_environment }
   depends_on = [
     aws_cloudwatch_log_group.worker,
-    aws_iam_role_policy_attachment.basic,
-    aws_iam_role_policy.application,
+    aws_iam_role_policy_attachment.worker_basic,
+    aws_iam_role_policy.worker_application,
   ]
 }
 

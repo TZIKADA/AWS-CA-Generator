@@ -2,8 +2,13 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
     "features": {
-        "ghcr.io/devcontainers/features/terraform:1": {},
+        "ghcr.io/devcontainers/features/terraform:1": {
+            "version": "1.10.0"
+        },
         "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "20"
+        },
         "ghcr.io/devcontainers/features/python:1": {},
         "ghcr.io/devcontainers/features/aws-cli:1": {},
         "ghcr.io/devcontainers/features/docker-in-docker:4": {}

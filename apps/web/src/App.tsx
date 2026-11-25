@@ -5,6 +5,7 @@ const AUTH_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN as string | undefined;
 const CLIENT_ID = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
 const TOKEN_KEY = "sigvault_id_token";
 const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+const MAX_PRIVATE_KEY_LENGTH = 65_536;
 const KEY_ALGORITHMS = ["RSA_2048", "RSA_3072", "RSA_4096", "ECDSA_P256", "ECDSA_P384"];
 
 type Organization = { id: string; name: string };
@@ -86,7 +87,11 @@ function messageFrom(error: unknown): string {
 
 export default function App() {
     const [health, setHealth] = useState("Checking");
-    const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+    const [token, setToken] = useState<string | null>(() => {
+        const sessionToken = sessionStorage.getItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_KEY);
+        return sessionToken;
+    });
     const [orgName, setOrgName] = useState("");
     const [assistantPrompt, setAssistantPrompt] = useState("");
     const [isAssisting, setIsAssisting] = useState(false);
@@ -152,7 +157,7 @@ export default function App() {
                 const body = await response.json();
                 if (!response.ok) throw new Error(body.error_description || "Sign-in failed");
                 if (!body.id_token) throw new Error("Cognito did not return an ID token");
-                localStorage.setItem(TOKEN_KEY, body.id_token);
+                sessionStorage.setItem(TOKEN_KEY, body.id_token);
                 sessionStorage.removeItem("pkce_verifier");
                 sessionStorage.removeItem("oauth_state");
                 setToken(body.id_token);
@@ -437,7 +442,7 @@ export default function App() {
     }
 
     function signOut() {
-        localStorage.removeItem(TOKEN_KEY);
+        sessionStorage.removeItem(TOKEN_KEY);
         sessionStorage.removeItem("pkce_verifier");
         sessionStorage.removeItem("oauth_state");
         setToken(null);
@@ -588,6 +593,7 @@ export default function App() {
                                             <span>Unprotected PGP private key</span>
                                             <textarea value={privateKey}
                                                 onChange={(event) => setPrivateKey(event.target.value)}
+                                                maxLength={MAX_PRIVATE_KEY_LENGTH}
                                                 autoComplete="off" required rows={5} spellCheck={false}
                                                 placeholder={"-----BEGIN PGP PRIVATE KEY BLOCK-----\nPaste a disposable test key"} />
                                         </label>

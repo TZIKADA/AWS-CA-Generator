@@ -66,6 +66,11 @@ moved {
 }
 
 moved {
+  from = module.backend.aws_s3_bucket_cors_configuration.documents
+  to   = aws_s3_bucket_cors_configuration.documents
+}
+
+moved {
   from = module.storage.aws_s3_bucket_policy.documents
   to   = module.backend.aws_s3_bucket_policy.documents
 }
@@ -74,6 +79,17 @@ module "frontend" {
   source            = "../modules/frontend"
   name              = local.name
   api_origin_domain = replace(module.backend.api_endpoint, "https://", "")
+}
+
+resource "aws_s3_bucket_cors_configuration" "documents" {
+  bucket = module.backend.documents_bucket
+
+  cors_rule {
+    allowed_methods = ["PUT", "GET"]
+    allowed_origins = [module.frontend.url, "http://localhost:5173"]
+    allowed_headers = ["content-type"]
+    max_age_seconds = 300
+  }
 }
 
 module "cicd" {

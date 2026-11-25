@@ -35,7 +35,7 @@ class OrgCreate(BaseModel):
 class KeyCreate(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     algorithm: str = Field(pattern="^(RSA_2048|RSA_3072|RSA_4096|ECDSA_P256|ECDSA_P384)$")
-    private_key_armored: str
+    private_key_armored: str = Field(min_length=1, max_length=65_536)
 
 
 class DocumentCreate(BaseModel):
@@ -60,18 +60,21 @@ async def _claims(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Cognito is not configured")
     try:
         key = _jwks.get_signing_key_from_jwt(credentials.credentials).key
-        return jwt.decode(
+        claims = jwt.decode(
             credentials.credentials,
             key,
             algorithms=["RS256"],
             audience=settings.cognito_client_id,
             issuer=settings.cognito_issuer,
         )
-    except Exception as exc:
+    except (jwt.PyJWTError, OSError) as exc:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "invalid or expired bearer token",
         ) from exc
+    if claims.get("token_use") != "id" or not claims.get("sub"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired bearer token")
+    return claims
 
 
 def _table_required():
@@ -84,10 +87,14 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _org_for_user(user_sub: str, org_id: str, roles=("admin", "member")):
+def _org_for_user(
+    user_sub: str,
+    org_id: str,
+    roles: tuple[str, ...] = ("admin", "member"),
+):
     table = _table_required()
     item = table.get_item(Key={"PK": f"ORG#{org_id}", "SK": f"MEMBER#{user_sub}"}).get("Item")
-    if item is None or item["role"] not in roles:
+    if item is None or item.get("role") not in roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not authorized for this org")
     return item
 

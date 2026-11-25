@@ -1,6 +1,7 @@
 import sys
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from sigvault import main
@@ -72,6 +73,80 @@ def test_assistant_rejects_empty_model_response(monkeypatch):
         main.app.dependency_overrides.clear()
 
     assert response.status_code == 502
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"sub": "user-1", "token_use": "access"},
+        {"sub": "user-1"},
+        {"token_use": "id"},
+    ],
+)
+def test_auth_rejects_non_id_or_incomplete_cognito_claims(monkeypatch, claims):
+    class FakeJwks:
+        def get_signing_key_from_jwt(self, _token):
+            return SimpleNamespace(key="test-key")
+
+    monkeypatch.setattr(main, "_jwks", FakeJwks())
+    monkeypatch.setattr(main.jwt, "decode", lambda *_args, **_kwargs: claims)
+
+    response = TestClient(main.app).post(
+        "/api/assistant/organization-name",
+        headers={"Authorization": "Bearer test-token"},
+        json={"prompt": "A company making bicycles"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_auth_accepts_id_token_claims(monkeypatch):
+    class FakeJwks:
+        def get_signing_key_from_jwt(self, _token):
+            return SimpleNamespace(key="test-key")
+
+    class FakeBedrock:
+        def converse(self, **_kwargs):
+            return {"output": {"message": {"content": [{"text": "Pedal Works"}]}}}
+
+    monkeypatch.setattr(main, "_jwks", FakeJwks())
+    monkeypatch.setattr(
+        main.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {"sub": "user-1", "token_use": "id"},
+    )
+    monkeypatch.setattr(main, "_bedrock", FakeBedrock())
+
+    response = TestClient(main.app).post(
+        "/api/assistant/organization-name",
+        headers={"Authorization": "Bearer test-token"},
+        json={"prompt": "A company making bicycles"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"name": "Pedal Works"}
+
+
+def test_org_authorization_checks_membership_and_role(monkeypatch):
+    class MembershipTable:
+        def get_item(self, *, Key):
+            if Key == {"PK": "ORG#org-1", "SK": "MEMBER#user-1"}:
+                return {"Item": {"role": "member"}}
+            return {}
+
+    monkeypatch.setattr(main, "_table", MembershipTable())
+
+    assert main._org_for_user("user-1", "org-1", ("admin", "member")) == {
+        "role": "member"
+    }
+
+    with pytest.raises(main.HTTPException) as denied_role:
+        main._org_for_user("user-1", "org-1", ("admin",))
+    assert denied_role.value.status_code == 403
+
+    with pytest.raises(main.HTTPException) as denied_org:
+        main._org_for_user("user-1", "org-2", ("admin", "member"))
+    assert denied_org.value.status_code == 403
 
 
 def test_list_and_create_organizations(monkeypatch):
@@ -250,6 +325,24 @@ def test_create_key_returns_bad_request_for_invalid_pgp_data(monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "invalid PGP private key"
+
+
+def test_create_key_rejects_oversized_private_key(monkeypatch):
+    _authorize(monkeypatch, FakeTable({}))
+
+    try:
+        response = TestClient(main.app).post(
+            "/api/orgs/org-1/keys",
+            json={
+                "label": "Signing",
+                "algorithm": "RSA_2048",
+                "private_key_armored": "x" * 65_537,
+            },
+        )
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 422
 
 
 def test_revoke_key(monkeypatch):
